@@ -104,11 +104,11 @@ class TransformerDecoderBlock(nn.Module):
         x = self.ffn(x) + x
         return x
 class TransformerEncoder(nn.Module):
-    def __init__(self,n_block,vector_size=732,token_size=1000):
+    def __init__(self,n_block,n_head,kv_head,vector_size,token_size):
         super(TransformerEncoder, self).__init__()
         self.embedding = nn.Embedding(token_size, vector_size)
         self.blocks = nn.ModuleList([
-            TransformerEncoderBlock(n_head=32, kv_head=8, vector_size=732) for _ in range(n_block)
+            TransformerEncoderBlock(n_head=n_head, kv_head=kv_head, vector_size=vector_size) for _ in range(n_block)
         ])
 
     def forward(self,x):
@@ -118,11 +118,11 @@ class TransformerEncoder(nn.Module):
         return x
 
 class TransformerDecoder(nn.Module):
-    def __init__(self,n_block,vector_size=732,token_size=1000):
+    def __init__(self,n_block,n_head,kv_head,vector_size,token_size):
         super(TransformerDecoder, self).__init__()
         self.embedding = nn.Embedding(token_size, vector_size)
         self.blocks = nn.ModuleList([
-            TransformerDecoderBlock(n_head=32, kv_head=8, vector_size=732) for _ in range(n_block)
+            TransformerDecoderBlock(n_head=n_head, kv_head=kv_head, vector_size=vector_size) for _ in range(n_block)
         ])
         self.lm_head = nn.Linear(vector_size, token_size)
     def forward(self,x,y):
@@ -133,10 +133,10 @@ class TransformerDecoder(nn.Module):
         return x
 
 class Transformer(nn.Module):
-    def __init__(self, n_block, vector_size=732, token_size=1000):
+    def __init__(self, n_block,n_head,kv_head, vector_size=732, token_size=1000):
         super(Transformer, self).__init__()
-        self.encoder = TransformerEncoder(n_block, vector_size, token_size)
-        self.decoder = TransformerDecoder(n_block, vector_size, token_size)
+        self.encoder = TransformerEncoder(n_block,n_head,kv_head, vector_size, token_size)
+        self.decoder = TransformerDecoder(n_block,n_head,kv_head, vector_size, token_size)
 
     def forward(self, x, y):
         x = self.encoder(x)
