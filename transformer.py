@@ -41,9 +41,19 @@ class ROPE(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self,n_head,kv_head):
+    def __init__(self,n_head,kv_head,vector_size):
         super(MultiHeadAttention, self).__init__()
-        pass
-    def forward(self, x):
-        # Placeholder for multi-head attention logic
+        self.q_m = nn.Linear(vector_size, vector_size)
+        group_size = vector_size * kv_head / n_head
+        self.k_m = nn.Linear(vector_size, group_size)
+        self.v_m = nn.Linear(vector_size, group_size)
+        self.o_m = nn.Linear(group_size, vector_size)
+        self.n_head = n_head
+        self.kv_head = kv_head
+    def forward(self, x, y):
+        q = self.q_m(x)
+        k = self.k_m(y)
+        v = self.v_m(y)
+
+
         return x
