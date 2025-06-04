@@ -3,11 +3,11 @@ from torch import nn
 from torch import functional
 
 class FFN(nn.Module):
-    def __init__ (self, vector_size):
+    def __init__ (self, vector_size, hidden_size):
         super(FFN, self).__init__()
-        self.w1 = nn.Linear(vector_size, vector_size)
-        self.w2 = nn.Linear(vector_size, vector_size)
-        self.w3 = nn.Linear(vector_size, vector_size)
+        self.w1 = nn.Linear(vector_size, hidden_size)
+        self.w2 = nn.Linear(hidden_size, vector_size)
+        self.w3 = nn.Linear(vector_size, hidden_size)
 
     def forward(self,x):
         x = functional.F.silu(self.w1(x)) * self.w3(x)
@@ -62,7 +62,13 @@ class MultiHeadAttention(nn.Module):
             # Apply RoPE
             q_head, k_head = self.rotate_q_k(q_head, k_head)
 
-            attn_weights = torch.matmul(q_head, k_head.transpose(-1, -2)) / (k_head.size(-1) ** 0.5)
+
+            # mask
+            attn_weights = (torch.matmul(q_head, k_head.transpose(-1, -2)) / k_head.size(-1)) ** 0.5
+            mask_matrix = torch.fill_(torch.zeros_like(attn_weights), "-inf")
+            mask_matrix = torch.tril(mask_matrix, diagonal=0)
+            attn_weights = attn_weights + mask_matrix
+
             attn_weights = functional.softmax(attn_weights, dim=-1)
             attn_output = torch.matmul(attn_weights, v_head)
             attention_arr.append(attn_output)
@@ -72,10 +78,10 @@ class MultiHeadAttention(nn.Module):
 
 
 class TransformerEncoderBlock(nn.Module):
-    def __init__(self, n_head, kv_head, vector_size):
+    def __init__(self, n_head, kv_head, vector_size, hidden_size):
         super(TransformerEncoderBlock, self).__init__()
         self.attention = MultiHeadAttention(n_head, kv_head, vector_size)
-        self.ffn = FFN(vector_size)
+        self.ffn = FFN(vector_size,hidden_size)
         self.rms_norm1 = RMSNorm(vector_size)
         self.rms_norm2 = RMSNorm(vector_size)
 
@@ -86,11 +92,11 @@ class TransformerEncoderBlock(nn.Module):
         x = self.ffn(x) + x
         return x
 class TransformerDecoderBlock(nn.Module):
-    def __init__(self, n_head, kv_head, vector_size):
+    def __init__(self, n_head, kv_head, vector_size, hidden_size):
         super(TransformerDecoderBlock, self).__init__()
         self.attention = MultiHeadAttention(n_head, kv_head, vector_size)
         self.cross_attention = MultiHeadAttention(n_head, kv_head, vector_size)
-        self.ffn = FFN(vector_size)
+        self.ffn = FFN(vector_size, hidden_size)
         self.rms_norm1 = RMSNorm(vector_size)
         self.rms_norm2 = RMSNorm(vector_size)
         self.rms_norm3 = RMSNorm(vector_size)
@@ -104,11 +110,11 @@ class TransformerDecoderBlock(nn.Module):
         x = self.ffn(x) + x
         return x
 class TransformerEncoder(nn.Module):
-    def __init__(self,n_block,n_head,kv_head,vector_size,token_size):
+    def __init__(self,n_block,n_head,kv_head,vector_size,token_size, hidden_size):
         super(TransformerEncoder, self).__init__()
         self.embedding = nn.Embedding(token_size, vector_size)
         self.blocks = nn.ModuleList([
-            TransformerEncoderBlock(n_head=n_head, kv_head=kv_head, vector_size=vector_size) for _ in range(n_block)
+            TransformerEncoderBlock(n_head=n_head, kv_head=kv_head, vector_size=vector_size, hidden_size=hidden_size) for _ in range(n_block)
         ])
 
     def forward(self,x):
@@ -118,11 +124,11 @@ class TransformerEncoder(nn.Module):
         return x
 
 class TransformerDecoder(nn.Module):
-    def __init__(self,n_block,n_head,kv_head,vector_size,token_size):
+    def __init__(self,n_block,n_head,kv_head,vector_size,token_size, hidden_size):
         super(TransformerDecoder, self).__init__()
         self.embedding = nn.Embedding(token_size, vector_size)
         self.blocks = nn.ModuleList([
-            TransformerDecoderBlock(n_head=n_head, kv_head=kv_head, vector_size=vector_size) for _ in range(n_block)
+            TransformerDecoderBlock(n_head=n_head, kv_head=kv_head, vector_size=vector_size, hidden_size=hidden_size) for _ in range(n_block)
         ])
         self.lm_head = nn.Linear(vector_size, token_size)
     def forward(self,x,y):
@@ -133,10 +139,10 @@ class TransformerDecoder(nn.Module):
         return x
 
 class Transformer(nn.Module):
-    def __init__(self, n_block,n_head,kv_head, vector_size=732, token_size=1000):
+    def __init__(self, n_block,n_head,kv_head, hidden_size, vector_size=732, token_size=1000):
         super(Transformer, self).__init__()
-        self.encoder = TransformerEncoder(n_block,n_head,kv_head, vector_size, token_size)
-        self.decoder = TransformerDecoder(n_block,n_head,kv_head, vector_size, token_size)
+        self.encoder = TransformerEncoder(n_block,n_head,kv_head, vector_size, token_size, hidden_size)
+        self.decoder = TransformerDecoder(n_block,n_head,kv_head, vector_size, token_size, hidden_size)
 
     def forward(self, x, y):
         x = self.encoder(x)
