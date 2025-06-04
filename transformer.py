@@ -29,50 +29,51 @@ class MultiHeadAttention(nn.Module):
     def __init__(self,n_head,kv_head,vector_size):
         super(MultiHeadAttention, self).__init__()
         self.q_m = nn.Linear(vector_size, vector_size)
-        group_size = vector_size * kv_head / n_head
+        group_size = int(vector_size * kv_head / n_head)
         self.k_m = nn.Linear(vector_size, group_size)
         self.v_m = nn.Linear(vector_size, group_size)
-        self.o_m = nn.Linear(group_size, vector_size)
+        self.o_m = nn.Linear(vector_size, vector_size)
         self.n_head = n_head
         self.kv_head = kv_head
 
+        group_vector_size = int(vector_size / n_head / 2)
         #rope
-        self.phi = 1 / ( 5000 ** torch.as_tensor(range(group_size)).float() / group_size)
+        self.phi = 1 / (5000 ** (torch.as_tensor(range(group_vector_size)).float() / group_vector_size))
     def rotate_q_k(self, q, k):
-        length_size = torch.as_tensor(range(q.shape[1])).float() / q.shape[1]
+        length_size = torch.arange(q.shape[1])
         matrix = torch.outer(self.phi, length_size)
-        q_complex = torch.view_as_complex(q.view(-1, 2))
-        k_complex = torch.view_as_complex(k.view(-1, 2))
-        q_rotated = q_complex * matrix
-        k_rotated = k_complex * matrix
+        matrix = torch.polar(torch.ones_like(matrix), matrix)
+        q_complex = torch.view_as_complex(q.view(q.shape[0],q.shape[1],-1, 2))
+        k_complex = torch.view_as_complex(k.view(k.shape[0],k.shape[1],-1, 2))
+        q_rotated = q_complex * matrix.T
+        k_rotated = k_complex * matrix.T
         q_rotated = torch.view_as_real(q_rotated).view(q.shape)
         k_rotated = torch.view_as_real(k_rotated).view(k.shape)
         return q_rotated, k_rotated
 
     def forward(self, x, y):
-        q = self.q_m(x).view(-1, self.n_head)
-        k = self.k_m(y).view(-1, self.kv_head)
-        v = self.v_m(y).view(-1, self.kv_head)
-        module = self.n_head / self.kv_head
+        q = self.q_m(x).view(x.shape[0],x.shape[1], self.n_head,-1)
+        k = self.k_m(y).view(y.shape[0],y.shape[1], self.kv_head,-1)
+        v = self.v_m(y).view(x.shape[0],x.shape[1], self.kv_head,-1)
+        module = int(self.n_head / self.kv_head)
         attention_arr = []
         for head in range(self.n_head):
-            q_head = q[:, head]
-            k_head = k[:, head // module]
-            v_head = v[:, head // module]
+            q_head = q[:,:, head]
+            k_head = k[:,:, head // module]
+            v_head = v[:,:, head // module]
             # Apply RoPE
             q_head, k_head = self.rotate_q_k(q_head, k_head)
 
-
             # mask
-            attn_weights = (torch.matmul(q_head, k_head.transpose(-1, -2)) / k_head.size(-1)) ** 0.5
-            mask_matrix = torch.fill_(torch.zeros_like(attn_weights), "-inf")
-            mask_matrix = torch.tril(mask_matrix, diagonal=0)
+            attn_weights = torch.matmul(q_head, k_head.transpose(-1, -2)) / k_head.shape[-1] ** 0.5
+            mask_matrix = torch.full(attn_weights.shape, float("-inf"))
+            mask_matrix = torch.triu(mask_matrix, diagonal=1)
             attn_weights = attn_weights + mask_matrix
 
-            attn_weights = functional.softmax(attn_weights, dim=-1)
+            attn_weights = functional.F.softmax(attn_weights, dim=-1)
             attn_output = torch.matmul(attn_weights, v_head)
             attention_arr.append(attn_output)
-        attention = torch.stack(attention_arr, dim=1)
+        attention = torch.cat(attention_arr, dim=-1)
         output = self.o_m(attention)
         return output
 
@@ -120,7 +121,7 @@ class TransformerEncoder(nn.Module):
     def forward(self,x):
         x = self.embedding(x)
         for block in self.blocks:
-            x = block(x, x)
+            x = block(x)
         return x
 
 class TransformerDecoder(nn.Module):
@@ -130,11 +131,13 @@ class TransformerDecoder(nn.Module):
         self.blocks = nn.ModuleList([
             TransformerDecoderBlock(n_head=n_head, kv_head=kv_head, vector_size=vector_size, hidden_size=hidden_size) for _ in range(n_block)
         ])
+        self.rms_norm = RMSNorm(vector_size)
         self.lm_head = nn.Linear(vector_size, token_size)
     def forward(self,x,y):
         x = self.embedding(x)
         for block in self.blocks:
             x = block(x, y)
+        x = self.rms_norm(x)
         x = self.lm_head(x)
         return x
 
@@ -148,3 +151,22 @@ class Transformer(nn.Module):
         x = self.encoder(x)
         y = self.decoder(y, x)
         return y
+
+
+if __name__ == "__main__":
+    # Example usage
+    n_block = 6
+    n_head = 16
+    kv_head = 8
+    hidden_size = 1024
+    vector_size = 736
+    token_size = 10000
+
+    model = Transformer(n_block, n_head, kv_head, hidden_size, vector_size, token_size)
+
+    # Dummy input
+    x = torch.randint(0, token_size, (10, 20))  # Batch of 10 sequences of length 20
+    y = torch.randint(0, token_size, (10, 20))  # Batch of 10 sequences of length 20
+
+    output = model(x, y)
+    print(output.shape)  # Should be (10, 20, token_size)
