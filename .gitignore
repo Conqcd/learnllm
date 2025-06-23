@@ -78,3 +78,6 @@ tokenizer.model
 
 /.idea/*
 /.ipynb_checkpoints/*
+/mengzi*/
+test_prediction*.json
+test_predictions.json
