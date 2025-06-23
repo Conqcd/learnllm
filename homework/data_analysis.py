@@ -120,7 +120,7 @@ if uploaded_file is not None:
                     with st.spinner('Processing your query...'):
                         # Get the response from DuckDbAgent
 
-                        resp = workflow.run("请告诉我 2023-01-01 到 2023-01-31 期间，产品 A 的总销售量是多少？")
+                        resp = workflow.run(user_query)
 
                         # Extract the content from the RunResponse object
                         if hasattr(resp, 'content'):
