@@ -1,5 +1,4 @@
 import streamlit as st
-import json
 import tempfile
 import csv
 import pandas as pd
@@ -7,10 +6,9 @@ import pandas as pd
 from dotenv import load_dotenv
 
 load_dotenv()
-from llama_index.llms.openai import OpenAI
-from llama_index.core.agent.workflow import FunctionAgent
-from phi.agent.duckdb import DuckDbAgent
-from agno.tools.pandas import PandasTools
+import DataAgent
+from DataAgent import agent
+import asyncio
 
 
 # Function to preprocess and save the uploaded file
@@ -52,6 +50,10 @@ def preprocess_and_save(file):
         return None, None, None
 
 
+async def chat(agent: DataAgent, query: str) -> str:
+    response = await agent.workflow.run(query)
+    return response
+
 # Streamlit app
 st.title("📊 Data Analyst Agent")
 
@@ -81,25 +83,7 @@ if uploaded_file is not None:
             ]
         }
 
-        # Initialize the DuckDbAgent for SQL query generation
 
-        duckdb_agent = DuckDbAgent(
-            semantic_model=json.dumps(semantic_model),
-            markdown=True,
-            add_history_to_messages=False,  # Disable chat history
-            followups=False,  # Disable follow-up queries
-            read_tool_call_history=False,  # Disable reading tool call history
-            )
-        tools = duckdb_agent.get_tools()
-
-        # 1) 构造一个 OpenAI LLM 实例
-        llm = OpenAI(model="qwen3-235b-a22b",temperature=0.7)
-        workflow = FunctionAgent(
-            tools=[tools],
-            llm=llm,
-            system_prompt="You are an expert data analyst. Generate SQL queries to solve the user's query. Return only the SQL query, enclosed in ```sql ``` and give the final answer.",
-
-        )
 
         # Initialize code storage in session state
         if "generated_code" not in st.session_state:
@@ -118,9 +102,9 @@ if uploaded_file is not None:
                 try:
                     # Show loading spinner while processing
                     with st.spinner('Processing your query...'):
-                        # Get the response from DuckDbAgent
+                        # Get the response from DataAgent
 
-                        resp = workflow.run(user_query)
+                        resp = asyncio.run(chat(agent, user_query))
 
                         # Extract the content from the RunResponse object
                         if hasattr(resp, 'content'):
@@ -134,5 +118,5 @@ if uploaded_file is not None:
 
 
                 except Exception as e:
-                    st.error(f"Error generating response from the DuckDbAgent: {e}")
+                    st.error(f"Error generating response from the LLama-Index: {e}")
                     st.error("Please try rephrasing your query or check if the data format is correct.")

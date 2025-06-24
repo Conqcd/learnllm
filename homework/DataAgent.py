@@ -1,18 +1,15 @@
-
 import pandas as pd
 from pathlib import Path
 
-import workflows
 from agno.utils.log import log_debug, logger
 from typing import Any, Dict, List, Optional
+from langchain.agents import Tool
 
 from dotenv import load_dotenv
-import asyncio
 import duckdb
 
 load_dotenv()
 from llama_index.llms.openai import OpenAI
-from llama_index.llms.openai_like import OpenAILike
 from llama_index.core.agent.workflow import FunctionAgent
 semantic_model = {
             "tables": [
@@ -30,7 +27,7 @@ class DataFunctionAgent():
         init_commands: Optional[List] = None,
         config: Optional[dict] = None,
         **kwargs):
-        llm = OpenAI(model="qwen3-235b-a22b", temperature=0.7)
+        llm = OpenAI(model="o3-mini", temperature=0.7)
         self.workflow = FunctionAgent(
             llm=llm,
             system_prompt="You are an expert data analyst. Generate SQL queries to solve the user's query. Return only the SQL query, enclosed in ```sql ``` and give the final answer.",
@@ -429,17 +426,25 @@ def export_table_to_path(self, table: str, format: Optional[str] = "PARQUET", pa
     """
     return agent.workflow.export_table_to_path(table, format, path)
 
-from langchain.agents import Tool
-create_pandas_dataframe_tool = Tool.from_function(
-    func=create_pandas_dataframe,
-    name="run_sql_query",
-    description="在 DuckDB 中执行传入的 SQL，并返回 JSON 格式结果"
-)
 
 tools: List[Any] = []
-tools.append(create_pandas_dataframe)
-tools.append(run_dataframe_operation)
-tools.append(save_file)
+tools.append(Tool.from_function(
+    func=create_pandas_dataframe,
+    name="create_pandas_dataframe",
+    description="创建Pandas的数据结构"
+))
+tools.append(Tool.from_function(
+    func=run_dataframe_operation,
+    name="run_dataframe_operation",
+    description="运行Pandas数据结构上的操作"
+)
+)
+tools.append(Tool.from_function(
+    func=save_file,
+    name="save_file",
+    description="保存文件"
+)
+)
 tools.append(show_tables)
 tools.append(describe_table)
 tools.append(inspect_query)
@@ -449,15 +454,3 @@ tools.append(summarize_table)
 tools.append(export_table_to_path)
 
 agent.workflow.tools = tools
-
-llm = OpenAI(model="o3-mini", temperature=0.7)
-workflow = FunctionAgent(
-    llm=llm,
-    system_prompt="You are an expert data analyst. Generate SQL queries to solve the user's query. Return only the SQL query, enclosed in ```sql ``` and give the final answer.",
-)
-
-async def fuck():
-    # Example usage
-    response = await workflow.run("请帮我分析一下这个数据")
-    print(response)
-print(asyncio.run(fuck()))
