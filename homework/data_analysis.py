@@ -95,7 +95,7 @@ if uploaded_file is not None:
         # 1) 构造一个 OpenAI LLM 实例
         llm = OpenAI(model="qwen3-235b-a22b",temperature=0.7)
         workflow = FunctionAgent(
-            # tools=[tools,PandasTools()],
+            tools=[tools],
             llm=llm,
             system_prompt="You are an expert data analyst. Generate SQL queries to solve the user's query. Return only the SQL query, enclosed in ```sql ``` and give the final answer.",
 
