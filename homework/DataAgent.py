@@ -33,6 +33,7 @@ class DataFunctionAgent():
             system_prompt="You are an expert data analyst. Generate SQL queries to solve the user's query. Return only the SQL query, enclosed in ```sql ``` and give the final answer.",
             **kwargs
         )
+        self.semantic_model: str = None
         self._connection = None
         self.dataframes: Dict[str, pd.DataFrame] = {}
         self.base_dir = Path.cwd()
@@ -44,12 +45,6 @@ class DataFunctionAgent():
     def get_default_instructions(self) -> List[str]:
         instructions = []
 
-        # Add instructions from the Model
-        if self.model is not None:
-            _model_instructions = self.model.get_instructions_for_model()
-            if _model_instructions is not None:
-                instructions += _model_instructions
-
         instructions += [
             "Determine if you can answer the question directly or if you need to run a query to accomplish the task.",
             "If you need to run a query, **FIRST THINK** about how you will accomplish the task and then write the query.",
@@ -60,23 +55,6 @@ class DataFunctionAgent():
                 "Using the `semantic_model` below, find which tables and columns you need to accomplish the task.",
             ]
 
-        if self.search_knowledge and self.knowledge is not None:
-            instructions += [
-                "You have access to tools to search the `knowledge_base` for information.",
-            ]
-            if self.semantic_model is None:
-                instructions += [
-                    "Search the `knowledge_base` for `tables` to get the tables you have access to.",
-                ]
-                instructions += [
-                    "If needed, search the `knowledge_base` for {table_name} to get information about that table.",
-                ]
-            if self.update_knowledge:
-                instructions += [
-                    "If needed, search the `knowledge_base` for results of previous queries.",
-                    "If you find any information that is missing from the `knowledge_base`, add it using the `add_to_knowledge_base` function.",
-                ]
-
         instructions += [
             "If you need to run a query, run `show_tables` to check the tables you need exist.",
             "If the tables do not exist, RUN `create_table_from_path` to create the table using the path from the `semantic_model` or the `knowledge_base`.",
@@ -86,15 +64,6 @@ class DataFunctionAgent():
             instructions += [
                 "If you need to join tables, check the `semantic_model` for the relationships between the tables.",
                 "If the `semantic_model` contains a relationship between tables, use that relationship to join the tables even if the column names are different.",
-            ]
-        elif self.knowledge is not None:
-            instructions += [
-                "If you need to join tables, search the `knowledge_base` for `relationships` to get the relationships between the tables.",
-                "If the `knowledge_base` contains a relationship between tables, use that relationship to join the tables even if the column names are different.",
-            ]
-        else:
-            instructions += [
-                "Use 'describe_table' to inspect the tables and only join on columns that have the same name and data type.",
             ]
 
         instructions += [
@@ -108,9 +77,8 @@ class DataFunctionAgent():
             "Show the user the SQL you ran",
         ]
 
-        # Add instructions for using markdown
-        if self.markdown and self.response_model is None:
-            instructions.append("Use markdown to format your answers.")
+
+        instructions.append("Use markdown to format your answers.")
 
         return instructions
 
@@ -120,26 +88,11 @@ class DataFunctionAgent():
         logger.debug("Building the system message for the DuckDbAgent.")
 
         # First add the Agent description
-        system_message = self.description or "You are a Data Engineering expert designed to perform tasks using DuckDb."
+        system_message = "You are a Data Engineering expert designed to perform tasks using DuckDb."
         system_message += "\n\n"
-
-        # Then add the prompt specifically from the Mode
-        if self.model is not None:
-            system_message_from_model = self.model.get_system_message_for_model()
-            if system_message_from_model is not None:
-                system_message += system_message_from_model
 
         # Then add instructions to the system prompt
         instructions = []
-        if self.instructions is not None:
-            _instructions = self.instructions
-            if callable(self.instructions):
-                _instructions = self.instructions(agent=self)
-
-            if isinstance(_instructions, str):
-                instructions.append(_instructions)
-            elif isinstance(_instructions, list):
-                instructions.extend(_instructions)
 
         instructions += self.get_default_instructions()
         if len(instructions) > 0:
@@ -147,10 +100,6 @@ class DataFunctionAgent():
             for instruction in instructions:
                 system_message += f"- {instruction}\n"
             system_message += "\n"
-
-        # Then add user provided additional context to the system message
-        if self.additional_context is not None:
-            system_message += self.additional_context + "\n"
 
         system_message += dedent("""\
             ## ALWAYS follow these rules:
@@ -176,17 +125,6 @@ class DataFunctionAgent():
             )
             system_message += self.semantic_model
             system_message += "\n"
-
-        if self.followups:
-            system_message += dedent(
-                """
-            After finishing your task, ask the user relevant followup questions like:
-            1. Would you like to see the sql? If the user says yes, show the sql. Get it using the `get_tool_call_history(num_calls=3)` function.
-            2. Was the result okay, would you like me to fix any problems? If the user says yes, get the previous query using the `get_tool_call_history(num_calls=3)` function and fix the problems.
-            2. Shall I add this result to the knowledge base? If the user says yes, add the result to the knowledge base using the `add_to_knowledge_base` function.
-            Let the user choose using number or text or continue the conversation.
-            """
-            )
 
         return system_message.strip()
 

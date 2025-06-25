@@ -2,7 +2,7 @@ import streamlit as st
 import tempfile
 import csv
 import pandas as pd
-
+import json
 from dotenv import load_dotenv
 from langsmith import traceable
 
@@ -104,10 +104,10 @@ if uploaded_file is not None:
                     # Show loading spinner while processing
                     with st.spinner('Processing your query...'):
                         # Get the response from DataAgent
-
+                        agent.semantic_model = json.dumps(semantic_model)
+                        agent.workflow.system_prompt = agent.get_system_message()
                         resp = asyncio.run(chat(agent, user_query))
-                        result = agent.connection.execute("SELECT 1").fetchall()
-                        print(result)  # 应该输出 [(1,)]
+
                         # Extract the content from the RunResponse object
                         if hasattr(resp, 'content'):
                             response_content = resp.content
