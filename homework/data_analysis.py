@@ -4,6 +4,7 @@ import csv
 import pandas as pd
 
 from dotenv import load_dotenv
+from langsmith import traceable
 
 load_dotenv()
 import DataAgent
@@ -49,7 +50,7 @@ def preprocess_and_save(file):
         st.error(f"Error processing file: {e}")
         return None, None, None
 
-
+@traceable
 async def chat(agent: DataAgent, query: str) -> str:
     response = await agent.workflow.run(query)
     return response

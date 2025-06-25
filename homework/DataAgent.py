@@ -3,10 +3,11 @@ from pathlib import Path
 
 from agno.utils.log import log_debug, logger
 from typing import Any, Dict, List, Optional
-from langchain.agents import Tool
-
+from llama_index.core.tools import FunctionTool
 from dotenv import load_dotenv
 import duckdb
+
+from langsmith.wrappers import wrap_openai
 
 load_dotenv()
 from llama_index.llms.openai import OpenAI
@@ -428,29 +429,48 @@ def export_table_to_path(self, table: str, format: Optional[str] = "PARQUET", pa
 
 
 tools: List[Any] = []
-tools.append(Tool.from_function(
-    func=create_pandas_dataframe,
+tools.append(FunctionTool.from_defaults(
+    create_pandas_dataframe,
     name="create_pandas_dataframe",
     description="创建Pandas的数据结构"
 ))
-tools.append(Tool.from_function(
-    func=run_dataframe_operation,
+tools.append(FunctionTool.from_defaults(
+    run_dataframe_operation,
     name="run_dataframe_operation",
     description="运行Pandas数据结构上的操作"
-)
-)
-tools.append(Tool.from_function(
-    func=save_file,
+))
+tools.append(FunctionTool.from_defaults(
+    save_file,
     name="save_file",
     description="保存文件"
-)
-)
-tools.append(show_tables)
-tools.append(describe_table)
-tools.append(inspect_query)
-tools.append(run_query)
-tools.append(create_table_from_path)
-tools.append(summarize_table)
-tools.append(export_table_to_path)
+))
+tools.append(FunctionTool.from_defaults(show_tables,
+    name="show_tables",
+    description="显示数据库中的表"
+))
+tools.append(FunctionTool.from_defaults(describe_table,
+    name="describe_table",
+    description="描述数据库中的表"
+))
+tools.append(FunctionTool.from_defaults(inspect_query,
+    name="inspect_query",
+    description="检查查询并返回查询计划"
+))
+tools.append(FunctionTool.from_defaults(run_query,
+    name="run_query",
+    description="运行SQL查询并返回结果"
+))
+tools.append(FunctionTool.from_defaults(create_table_from_path,
+    name="create_table_from_path",
+    description="从路径创建表"
+))
+tools.append(FunctionTool.from_defaults(summarize_table,
+    name="summarize_table",
+    description="计算表的摘要信息"
+))
+tools.append(FunctionTool.from_defaults(export_table_to_path,
+    name="export_table_to_path",
+    description="将表导出到指定路径"
+))
 
 agent.workflow.tools = tools

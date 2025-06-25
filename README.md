@@ -1,1 +1,8 @@
 # learnllm
+
+langsmith key
+
+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
+
+phoenix
+6781f41158061aaa800:657f3fc
