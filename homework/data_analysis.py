@@ -106,7 +106,8 @@ if uploaded_file is not None:
                         # Get the response from DataAgent
 
                         resp = asyncio.run(chat(agent, user_query))
-
+                        result = agent.connection.execute("SELECT 1").fetchall()
+                        print(result)  # 应该输出 [(1,)]
                         # Extract the content from the RunResponse object
                         if hasattr(resp, 'content'):
                             response_content = resp.content

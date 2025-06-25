@@ -456,6 +456,9 @@ workflow = FunctionAgent(
     system_prompt="You are an expert data analyst. Generate SQL queries to solve the user's query. Return only the SQL query, enclosed in ```sql ``` and give the final answer.",
 )
 
+result = agent.connection.execute("SELECT 1").fetchall()
+print(result)  # 应该输出 [(1,)]
+
 async def fuck():
     # Example usage
     response = await workflow.run("请帮我分析一下这个数据")
