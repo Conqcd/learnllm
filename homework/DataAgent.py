@@ -480,7 +480,7 @@ def run_query(query: str) -> str:
     """
     return agent.workflow.run_query(query)
 
-def create_table_from_path(self, path: str, table: Optional[str] = None, replace: bool = False) -> str:
+def create_table_from_path(path: str, table: Optional[str] = None, replace: bool = False) -> str:
     """Creates a table from a path
 
     :param path: Path to load
@@ -490,7 +490,7 @@ def create_table_from_path(self, path: str, table: Optional[str] = None, replace
     """
     return agent.workflow.create_table_from_path(path, table, replace)
 
-def summarize_table(self, table: str) -> str:
+def summarize_table(table: str) -> str:
     """Function to compute a number of aggregates over a table.
     The function launches a query that computes a number of aggregates over all columns,
     including min, max, avg, std and approx_unique.
@@ -500,7 +500,7 @@ def summarize_table(self, table: str) -> str:
     """
     return agent.workflow.summarize_table(table)
 
-def export_table_to_path(self, table: str, format: Optional[str] = "PARQUET", path: Optional[str] = None) -> str:
+def export_table_to_path(table: str, format: Optional[str] = "PARQUET", path: Optional[str] = None) -> str:
     """Save a table in a desired format (default: parquet)
     If the path is provided, the table will be saved under that path.
         Eg: If path is /tmp, the table will be saved as /tmp/table.parquet

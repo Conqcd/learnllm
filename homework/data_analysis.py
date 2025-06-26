@@ -11,7 +11,10 @@ import DataAgent
 from DataAgent import agent
 import asyncio
 
+import llama_index.core
 
+# 全局注册 simple 回调
+# llama_index.core.set_global_handler("simple")
 # Function to preprocess and save the uploaded file
 def preprocess_and_save(file):
     try:
@@ -104,6 +107,7 @@ if uploaded_file is not None:
                     # Show loading spinner while processing
                     with st.spinner('Processing your query...'):
                         # Get the response from DataAgent
+                        print([t.metadata.name for t in agent.workflow.tools])
                         agent.semantic_model = json.dumps(semantic_model)
                         agent.workflow.system_prompt = agent.get_system_message()
                         resp = asyncio.run(chat(agent, user_query))
