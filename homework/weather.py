@@ -6,7 +6,7 @@ mcp = FastMCP('weather-service', port=12111)
 
 @mcp.tool()
 def query_weather(city: str) -> str:
-    """Return the weather of city."""
+    """Return the weather of city today."""
     print(city)
     return "晴天"
 
@@ -17,4 +17,4 @@ for route in app.routes:
 
 if __name__ == '__main__':
     # 使用 SSE 模式启动
-    asyncio.run(mcp.run_stdio_async())
+    asyncio.run(mcp.run_http_async())
