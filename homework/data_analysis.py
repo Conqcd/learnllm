@@ -107,7 +107,6 @@ if uploaded_file is not None:
                     # Show loading spinner while processing
                     with st.spinner('Processing your query...'):
                         # Get the response from DataAgent
-                        print([t.metadata.name for t in agent.workflow.tools])
                         agent.semantic_model = json.dumps(semantic_model)
                         agent.workflow.system_prompt = agent.get_system_message()
                         resp = asyncio.run(chat(agent, user_query))
