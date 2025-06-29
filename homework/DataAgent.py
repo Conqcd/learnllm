@@ -11,14 +11,6 @@ from dotenv import load_dotenv
 load_dotenv()
 from llama_index.llms.openai import OpenAI
 from llama_index.core.agent.workflow import FunctionAgent
-semantic_model = {
-            "tables": [
-                {
-                    "name": "uploaded_data",
-                    "description": "Contains the uploaded dataset.",
-                }
-            ]
-        }
 
 class DataFunctionAgent():
     def __init__(self,
@@ -419,7 +411,7 @@ def create_pandas_dataframe(dataframe_name: str, create_using_function: str, fun
     :param function_parameters: The parameters to pass to the function.
     :return: The name of the created dataframe if successful, otherwise an error message.
     """
-    return agent.workflow.create_pandas_dataframe(dataframe_name, create_using_function, function_parameters)
+    return agent.create_pandas_dataframe(dataframe_name, create_using_function, function_parameters)
 
 def run_dataframe_operation(dataframe_name: str, operation: str, operation_parameters: Dict[str, Any]) -> str:
     """Runs an operation `operation` on a dataframe `dataframe_name` with the parameters `operation_parameters`.
@@ -434,7 +426,7 @@ def run_dataframe_operation(dataframe_name: str, operation: str, operation_param
     :param operation_parameters: The parameters to pass to the operation.
     :return: The result of the operation if successful, otherwise an error message.
     """
-    return agent.workflow.create_pandas_dataframe(dataframe_name, operation, operation_parameters)
+    return agent.create_pandas_dataframe(dataframe_name, operation, operation_parameters)
 
 
 def save_file(contents: str, file_name: str, overwrite: bool = True) -> str:
@@ -445,7 +437,7 @@ def save_file(contents: str, file_name: str, overwrite: bool = True) -> str:
     :param overwrite: Overwrite the file if it already exists.
     :return: The file name if successful, otherwise returns an error message.
     """
-    return agent.workflow.save_file(contents, file_name, overwrite)
+    return agent.save_file(contents, file_name, overwrite)
 
 
 def show_tables(show_tables: bool) -> str:
@@ -454,7 +446,7 @@ def show_tables(show_tables: bool) -> str:
     :param show_tables: Show tables in the database
     :return: List of tables in the database
     """
-    return agent.workflow.show_tables(show_tables)
+    return agent.show_tables(show_tables)
 
 def describe_table(table: str) -> str:
     """Function to describe a table
@@ -462,7 +454,7 @@ def describe_table(table: str) -> str:
     :param table: Table to describe
     :return: Description of the table
     """
-    return agent.workflow.describe_table(table)
+    return agent.describe_table(table)
 
 def inspect_query(query: str) -> str:
     """Function to inspect a query and return the query plan. Always inspect your query before running them.
@@ -470,7 +462,7 @@ def inspect_query(query: str) -> str:
     :param query: Query to inspect
     :return: Query plan
     """
-    return agent.workflow.inspect_query(query)
+    return agent.inspect_query(query)
 
 def run_query(query: str) -> str:
     """Function that runs a query and returns the result.
@@ -478,7 +470,7 @@ def run_query(query: str) -> str:
     :param query: SQL query to run
     :return: Result of the query
     """
-    return agent.workflow.run_query(query)
+    return agent.run_query(query)
 
 def create_table_from_path(path: str, table: Optional[str] = None, replace: bool = False) -> str:
     """Creates a table from a path
@@ -488,7 +480,7 @@ def create_table_from_path(path: str, table: Optional[str] = None, replace: bool
     :param replace: Whether to replace the table if it already exists
     :return: Table name created
     """
-    return agent.workflow.create_table_from_path(path, table, replace)
+    return agent.create_table_from_path(path, table, replace)
 
 def summarize_table(table: str) -> str:
     """Function to compute a number of aggregates over a table.
@@ -498,7 +490,7 @@ def summarize_table(table: str) -> str:
     :param table: Table to summarize
     :return: Summary of the table
     """
-    return agent.workflow.summarize_table(table)
+    return agent.summarize_table(table)
 
 def export_table_to_path(table: str, format: Optional[str] = "PARQUET", path: Optional[str] = None) -> str:
     """Save a table in a desired format (default: parquet)
@@ -511,7 +503,7 @@ def export_table_to_path(table: str, format: Optional[str] = "PARQUET", path: Op
     :param path: Path to export to
     :return: None
     """
-    return agent.workflow.export_table_to_path(table, format, path)
+    return agent.export_table_to_path(table, format, path)
 
 
 tools: List[Any] = []

@@ -13,9 +13,12 @@ import DataAgent
 from DataAgent import agent
 
 
-async def fuck():
-    # Example usage
-    response = await agent.workflow.run("请帮我分析一下这个数据")
-    print(response)
-agent.workflow.tools[0].metadata.to_openai_tool()
-print(asyncio.run(fuck()))
+# async def fuck():
+#     # Example usage
+#     response = await agent.workflow.run("请帮我分析一下这个数据")
+#     print(response)
+# agent.workflow.tools[0].metadata.to_openai_tool()
+# print(asyncio.run(fuck()))
+
+conn = duckdb.connect('mydata.duckdb')
+print("yes")
