@@ -4,18 +4,12 @@ import csv
 import pandas as pd
 import json
 from dotenv import load_dotenv
-from langsmith import traceable
 
 load_dotenv()
 import DataAgent
 from DataAgent import agent
 import asyncio
 
-import llama_index.core
-
-# 全局注册 simple 回调
-# llama_index.core.set_global_handler("simple")
-# Function to preprocess and save the uploaded file
 def preprocess_and_save(file):
     try:
         # Read the uploaded file into a DataFrame
@@ -53,7 +47,6 @@ def preprocess_and_save(file):
         st.error(f"Error processing file: {e}")
         return None, None, None
 
-@traceable
 async def chat(agent: DataAgent, query: str) -> str:
     response = await agent.workflow.run(query)
     return response
