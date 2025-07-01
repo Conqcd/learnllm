@@ -2,6 +2,7 @@ import os
 from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Optional
 from pydantic import BaseModel, Field
 
+from agno.memory import AgentMemory
 
 from llama_index.core.agent import FunctionCallingAgentWorker
 from llama_index.llms.openai import OpenAI
