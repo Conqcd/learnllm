@@ -131,33 +131,48 @@ class GameEnvironment(Team):
             if agent.role == 'Werewolf':
                 agent.observe(msg)
 
+    def eliminate(self, name):
+        # Remove a dead agent from the game
+        self.agents = [agent for agent in self.agents if agent.name != name]
+        print(f"{name} has been eliminated.")
+
     def day_phase(self):
         self.broadcast_public("Day begins. Discuss!")
         # Agents decide votes
         for agent in self.agents:
             agent.decide_vote()
+        # For simplicity, randomly eliminate someone voted most (stub)
+        eliminated = random.choice(self.agents)
+        self.eliminate(eliminated.name)
 
     def night_phase(self):
         self.broadcast_public("Night falls.")
         # Wolves decide kill
         for agent in self.agents:
             agent.night_action()
-    def game_end(self) -> str:
+
+    def check_end(self) -> bool:
         # Check if game ends
         werewolves = [agent for agent in self.agents if agent.role == 'Werewolf']
         villagers = [agent for agent in self.agents if agent.role != 'Werewolf']
         if not werewolves:
             self.broadcast_public("Villagers win!")
+            return True
         elif len(werewolves) >= len(villagers):
             self.broadcast_public("Werewolves win!")
+            return True
         else:
             self.broadcast_public("Game continues...")
+            return False
     def run(self):
         self.broadcast_public("Game start!")
-        # Simple one day-night cycle
-        self.day_phase()
-        self.night_phase()
-        self.broadcast_public("Game ends.")
+        # Loop until end condition met
+        while True:
+            self.night_phase()
+            if self.check_end(): break
+            self.day_phase()
+            if self.check_end(): break
+        self.broadcast_public("Game over.")
 
 def createAgent(role:str)->Agent:
     if(role == 'Werewolf'):
