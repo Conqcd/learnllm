@@ -1,19 +1,18 @@
 import streamlit as st
-
-
 from openai import OpenAI
 import tempfile
 import os
 from os import getenv
 from dotenv import load_dotenv
 load_dotenv()
+import asyncio
 from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, MatchValue
 from qdrant_client.models import PointStruct
 from qdrant_client.models import VectorParams, Distance
 from llama_index.core.node_parser import SentenceSplitter
-
+from metagpt.team import Team
 from llama_index.readers.file import PDFReader
+from legalTeamAgent import LegalResearcher, ContractAnalyst, LegalStrategist, TeamLeader
 
 
 def init_session_state():
@@ -121,8 +120,25 @@ def process_document(uploaded_file, vector_db: QdrantClient):
 
     except Exception as e:
         st.error(f"Document processing error: {str(e)}")
-        raise Exception(f"Error processing document: {str(e)}")
+        # raise Exception(f"Error processing document: {str(e)}")
 
+
+async def chat(team,query:str) -> str:
+    """
+    Chat with the team using the provided query.
+
+    Args:
+        team: The team to chat with
+        query: The query to send to the team
+
+    Returns:
+        str: The response from the team
+    """
+    if not isinstance(team, Team):
+        raise ValueError("team must be an instance of Team")
+
+    response = await team.run(idea=query)
+    return response.content if response.content else "No response from team"
 
 def main():
     st.set_page_config(page_title="Legal Document Analyzer", layout="wide")
@@ -173,70 +189,36 @@ def main():
                             st.session_state.processed_files.add(uploaded_file.name)
 
                             # Initialize agents
-                            # legal_researcher = Agent(
-                            #     name="Legal Researcher",
-                            #     role="Legal research specialist",
-                            #     model=OpenAIChat(id="gpt-4.1"),
-                            #     tools=[DuckDuckGoTools()],
-                            #     knowledge=st.session_state.knowledge_base,
-                            #     search_knowledge=True,
-                            #     instructions=[
-                            #         "Find and cite relevant legal cases and precedents",
-                            #         "Provide detailed research summaries with sources",
-                            #         "Reference specific sections from the uploaded document",
-                            #         "Always search the knowledge base for relevant information"
-                            #     ],
-                            #     show_tool_calls=True,
-                            #     markdown=True
-                            # )
-                            #
-                            # contract_analyst = Agent(
-                            #     name="Contract Analyst",
-                            #     role="Contract analysis specialist",
-                            #     model=OpenAIChat(id="gpt-4.1"),
-                            #     knowledge=st.session_state.knowledge_base,
-                            #     search_knowledge=True,
-                            #     instructions=[
-                            #         "Review contracts thoroughly",
-                            #         "Identify key terms and potential issues",
-                            #         "Reference specific clauses from the document"
-                            #     ],
-                            #     markdown=True
-                            # )
-                            #
-                            # legal_strategist = Agent(
-                            #     name="Legal Strategist",
-                            #     role="Legal strategy specialist",
-                            #     model=OpenAIChat(id="gpt-4.1"),
-                            #     knowledge=st.session_state.knowledge_base,
-                            #     search_knowledge=True,
-                            #     instructions=[
-                            #         "Develop comprehensive legal strategies",
-                            #         "Provide actionable recommendations",
-                            #         "Consider both risks and opportunities"
-                            #     ],
-                            #     markdown=True
-                            # )
-                            #
-                            # # Legal Agent Team
-                            # st.session_state.legal_team = Agent(
-                            #     name="Legal Team Lead",
-                            #     role="Legal team coordinator",
-                            #     model=OpenAIChat(id="gpt-4.1"),
-                            #     team=[legal_researcher, contract_analyst, legal_strategist],
-                            #     knowledge=st.session_state.knowledge_base,
-                            #     search_knowledge=True,
-                            #     instructions=[
-                            #         "Coordinate analysis between team members",
-                            #         "Provide comprehensive responses",
-                            #         "Ensure all recommendations are properly sourced",
-                            #         "Reference specific parts of the uploaded document",
-                            #         "Always search the knowledge base before delegating tasks"
-                            #     ],
-                            #     show_tool_calls=True,
-                            #     markdown=True
-                            # )
+                            legal_researcher = LegalResearcher(
+                                qdrant=st.session_state.vector_db,
+                                collection_name = uploaded_file.name,
+                                name="Legal Researcher",
+                                profile="Legal research specialist",
+                            )
 
+                            contract_analyst = ContractAnalyst(
+                                qdrant=st.session_state.vector_db,
+                                collection_name = uploaded_file.name,
+                                name="Contract Analyst",
+                                profile="Contract analysis specialist",
+                            )
+
+                            legal_strategist = LegalStrategist(
+                                qdrant=st.session_state.vector_db,
+                                collection_name = uploaded_file.name,
+                                name="Legal Strategist",
+                                profile="Legal strategy specialist"
+                            )
+
+                            # Legal Agent Team Leader
+                            legal_team_leader = TeamLeader(
+                                name="Legal Team Lead",
+                                profile="Legal team coordinator"
+                            )
+                            # Legal Agent Team
+                            team = Team()
+                            team.hire([legal_team_leader,legal_researcher, contract_analyst, legal_strategist])
+                            st.session_state.legal_team = team
                             st.success("✅ Document processed and team initialized!")
 
                         except Exception as e:
@@ -347,7 +329,7 @@ def main():
                             Focus Areas: {', '.join(analysis_configs[analysis_type]['agents'])}
                             """
 
-                        response = st.session_state.legal_team.run(combined_query)
+                        response = asyncio.run(chat(st.session_state.legal_team, combined_query))
 
                         # Display results in tabs
                         tabs = st.tabs(["Analysis", "Key Points", "Recommendations"])
@@ -363,13 +345,12 @@ def main():
 
                         with tabs[1]:
                             st.markdown("### Key Points")
-                            key_points_response = st.session_state.legal_team.run(
+                            key_points_response = asyncio.run(chat(st.session_state.legal_team,
                                 f"""Based on this previous analysis:    
                                 {response.content}
-
                                 Please summarize the key points in bullet points.
                                 Focus on insights from: {', '.join(analysis_configs[analysis_type]['agents'])}"""
-                            )
+                            ))
                             if key_points_response.content:
                                 st.markdown(key_points_response.content)
                             else:
@@ -379,13 +360,13 @@ def main():
 
                         with tabs[2]:
                             st.markdown("### Recommendations")
-                            recommendations_response = st.session_state.legal_team.run(
+                            recommendations_response = asyncio.run(chat(st.session_state.legal_team,
                                 f"""Based on this previous analysis:
                                 {response.content}
 
                                 What are your key recommendations based on the analysis, the best course of action?
                                 Provide specific recommendations from: {', '.join(analysis_configs[analysis_type]['agents'])}"""
-                            )
+                            ))
                             if recommendations_response.content:
                                 st.markdown(recommendations_response.content)
                             else:
