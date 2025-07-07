@@ -75,12 +75,12 @@ class QdrantRAGAction(Action):
         检索到的相关文本（拼接后的字符串）
         """
         # 1. 将查询转换为向量
-        query_vector = self.embed_model.create(model=self.model_name, input=query).tolist()
+        query_vector = self.embed_model.create(model=self.model_name, input=query)
         # 2. 执行向量搜索
         try:
             search_result = self.client.search(
                 collection_name=self.collection_name,
-                query_vector=query_vector,
+                query_vector=query_vector.data[0].embedding,
                 limit=self.top_k,
                 with_payload=True  # 返回存储的文本内容
             )
@@ -248,24 +248,23 @@ class DuckDuckGoSearch(Action):
         return "\n\n".join(formatted)
 
 class MakeResearch(Action):
-    async def run(self, contract:str, websearch:str, query: str) -> str:
+    async def run(self, websearch:str, query: str) -> str:
         logger.info(f"⚠️ 研究专家开始分析: {query[:30]}...")
         prompt = f"""
         ## 用户查询 ##
         {query}
 
-        ## 你的角色 ##
-        你是风险控制专家，擅长识别和评估各类商业和技术风险。
+        ## 案例搜索结果和用户合同内容 ##
+        {websearch}
 
         ## 任务 ##
-        请从以下角度提供专业分析：
-        1. 技术实施风险
-        2. 市场接受度风险
-        3. 合规与法律风险
-        4. 财务与运营风险
-        5. 风险缓解策略
+        根据上述资料，请从以下步骤提供专业分析：
+        1.Find and cite relevant legal cases and precedents,
+        2.Provide detailed research summaries with sources,
+        3.Reference specific sections from the uploaded document,
+        4.Always search the knowledge base for relevant information
 
-        输出格式：Markdown 风险评估报告
+        输出格式：Markdown 法律案例报告
         """
         return await self._aask(prompt)
 class LegalResearcher(Role):
@@ -275,7 +274,9 @@ class LegalResearcher(Role):
             **kwargs):
         super().__init__(**kwargs)
 
-        self.set_actions([QdrantRAGAction(qdrant=qdrant, collection_name=collection_name),DuckDuckGoSearch,MakeResearch])
+        self.qdrantAction = QdrantRAGAction(qdrant=qdrant, collection_name=collection_name)
+
+        self.set_actions([MakeResearch])
         # 监听用户查询和专家报告
         self._watch([TaskAssignment])
 
@@ -285,16 +286,34 @@ class LegalResearcher(Role):
         task_msg = self.rc.memory.get_by_action(TaskAssignment)[0]
 
         # 检查是否是给自己的任务
-        if self.profile not in task_msg.instruct_to:
+        if self.name not in task_msg.send_to:
             return Message(content="非分配任务", role=self.profile)
 
-        # 执行搜索qdrant数据库
-        legal_search = await self.rc.todo[0].run(task_msg.content)
+        key_categories = [
+            "合同标的与范围",
+            "履行期限与交付",
+            "双方权利义务",
+            "价格与支付条款",
+            "保证与陈述",
+            "违约责任与赔偿",
+            "合同期限与终止条件",
+            "争议解决与管辖",
+            "保密与知识产权",
+            "不可抗力条款"
+        ]
 
-        # 执行搜索duckduckgo
-        duckduckgo_search = await self.rc.todo[1].run(task_msg.content)
+        results = {}
+        for cat in key_categories:
+            # 每次检索时，将分类名称作为 query，让 Agent 去拉相关段落
+            prompt = f"请检索这份合同中与「{cat}」相关的所有条款，并做简要归纳。"
+            item = await self.qdrantAction.run(prompt)
+            contract = "法律条款" + item
+            case = await DuckDuckGoSearch().run(query=contract)
+            results[cat] = "法律条款" + item + "\n\n" + "案例搜索结果" + case
+
+        legal_search = "\n".join(f"{k}: {v}" for k, v in results.items())
         # 执行法律总结
-        legal_summarize = await self.rc.todo[2].run(contract =legal_search,websearch = duckduckgo_search ,query= task_msg.content)
+        legal_summarize = await self.rc.todo.run(websearch = legal_search ,query= task_msg.content)
 
         # 将分析结果发送给领导
         return Message(
@@ -311,19 +330,17 @@ class MakeAnalyst(Action):
         prompt = f"""
         ## 用户查询 ##
         {query}
-
-        ## 你的角色 ##
-        你是风险控制专家，擅长识别和评估各类商业和技术风险。
+        
+        ## 用户合同内容 ##
+        {contract}
 
         ## 任务 ##
-        请从以下角度提供专业分析：
-        1. 技术实施风险
-        2. 市场接受度风险
-        3. 合规与法律风险
-        4. 财务与运营风险
-        5. 风险缓解策略
+        请从以下步骤进行专业分析：
+        1.Review contracts thoroughly,
+        2.Identify key terms and potential issues,
+        3.Reference specific clauses from the document
 
-        输出格式：Markdown 风险评估报告
+        输出格式：Markdown 法律合同分析
         """
         return await self._aask(prompt)
 class ContractAnalyst(Role):
@@ -333,7 +350,9 @@ class ContractAnalyst(Role):
                  **kwargs):
         super().__init__(**kwargs)
 
-        self.set_actions([QdrantRAGAction(qdrant=qdrant, collection_name=collection_name),MakeAnalyst])
+        self.qdrantAction = QdrantRAGAction(qdrant=qdrant, collection_name=collection_name)
+
+        self.set_actions([MakeAnalyst])
         # 监听用户查询和专家报告
         self._watch([TaskAssignment])
 
@@ -343,11 +362,32 @@ class ContractAnalyst(Role):
         task_msg = self.rc.memory.get_by_action(TaskAssignment)[0]
 
         # 检查是否是给自己的任务
-        if self.profile not in task_msg.instruct_to:
+        if self.name not in task_msg.send_to:
             return Message(content="非分配任务", role=self.profile)
 
+        key_categories = [
+            "合同标的与范围",
+            "履行期限与交付",
+            "双方权利义务",
+            "价格与支付条款",
+            "保证与陈述",
+            "违约责任与赔偿",
+            "合同期限与终止条件",
+            "争议解决与管辖",
+            "保密与知识产权",
+            "不可抗力条款"
+        ]
+
+        results = {}
+        for cat in key_categories:
+            # 每次检索时，将分类名称作为 query，让 Agent 去拉相关段落
+            prompt = f"请检索这份合同中与「{cat}」相关的所有条款，并做简要归纳。"
+            results[cat] = await self.qdrantAction.run(prompt)
+
+        contract = "\n".join(f"{k}: {v}" for k, v in results.items())
+
         # 执行法律分析
-        biz_analysis = await self.rc.todo.run(task_msg.content)
+        biz_analysis = await self.rc.todo.run(contract=contract,query=task_msg.content)
 
         # 将分析结果发送给领导
         return Message(
@@ -400,7 +440,7 @@ class LegalStrategist(Role):
         task_msg = self.rc.memory.get_by_action(TaskAssignment)[0]
 
         # 检查是否是给自己的任务
-        if self.profile not in task_msg.instruct_to:
+        if self.name not in task_msg.send_to:
             return Message(content="非分配任务", role=self.profile)
 
         # 执行法律战略计划
@@ -421,17 +461,11 @@ class TaskAssignment(Action):
     async def run(self, query: str) -> dict:
         """分析查询内容并决定分配哪些专家"""
         prompt = f"""
-        ## 用户查询 ##
+        ## 用户查询 和 专家定义 ##
         {query}
 
-        ## 专家团队 ##
-        1. 技术专家 - 负责技术可行性分析
-        2. 商业分析师 - 负责市场与商业模式分析
-        3. 用户体验专家 - 负责用户需求与体验设计
-        4. 风险控制专家 - 负责风险评估
-
         ## 你的任务 ##
-        1. 分析查询内容，确定需要哪些专家参与
+        1. 分析查询内容，在上面选择专家，确定需要哪些专家参与
         2. 为每位专家分配具体的分析任务
         3. 说明分配理由
 
@@ -440,11 +474,11 @@ class TaskAssignment(Action):
             "分配说明": "简要说明分配理由",
             "分配列表": [
                 {{
-                    "专家类型": "技术专家",
+                    "专家类型": "Legal Researcher",
                     "任务描述": "具体分析任务描述"
                 }},
                 {{
-                    "专家类型": "商业分析师",
+                    "专家类型": "Contract Analyst",
                     "任务描述": "具体分析任务描述"
                 }}
             ]
@@ -463,12 +497,7 @@ class TaskAssignment(Action):
 class SummarizeReports(Action):
     """汇总所有分析报告"""
 
-    async def run(self, reports: list) -> str:
-        report_text = "\n\n".join([
-            f"## {report['role']}报告 ##\n{report['content']}"
-            for report in reports
-        ])
-
+    async def run(self, report_text: str) -> str:
         prompt = f"""
         ## 分析报告汇总 ##
         {report_text}
@@ -591,15 +620,20 @@ class TeamLeader(Role):
             content=task_msg,
             role=self.profile,
             cause_by=TaskAssignment,
-            send_to="ALL",  # 发送给所有专家
-            instruct_to=experts_to_assign,  # 指定分配给哪些专家
+            send_to=set(experts_to_assign),  # 发送给所有专家
             original_query=query  # 保存原始查询
         )
 
     async def _summarize_reports(self) -> Message:
         """汇总所有专家报告"""
+
+        report_text = "\n\n".join([
+            f"## {report['role']}报告 ##\n{report['content']}"
+            for report in self.received_reports
+        ])
+
         # 汇总报告
-        summary = await SummarizeReports().run(self.received_reports)
+        summary = await SummarizeReports().run(report_text)
 
         # 添加任务分配信息
         task_msg = self.rc.memory.get_by_action(TaskAssignment)[0]

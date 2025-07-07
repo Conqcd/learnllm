@@ -70,7 +70,7 @@ def process_document(uploaded_file, vector_db: QdrantClient):
             temp_file_path = temp_file.name
 
         st.info("Loading and processing document...")
-
+        # vector_db.delete_collection(uploaded_file.name)
         vector_db.create_collection(uploaded_file.name,vectors_config=VectorParams(
         size=1536,
         distance=Distance.COSINE,
@@ -82,11 +82,10 @@ def process_document(uploaded_file, vector_db: QdrantClient):
             try:
 
                 documents = PDFReader().load_data(file=temp_file_path)
-                parser = SentenceSplitter(chunk_size=1024, chunk_overlap=0)
+                parser = SentenceSplitter(chunk_size=128, chunk_overlap=16)
                 docstr = [doc.text for doc in documents]
                 docstr = "".join(docstr)
 
-                parser = SentenceSplitter(chunk_size=1024, chunk_overlap=0)
                 chunks = parser.split_text(docstr)
 
                 emb = OpenAI(base_url=getenv("OpenAI_API_EMBEDDING_BASE"), api_key=getenv("OPENAI_API_KEY"))
