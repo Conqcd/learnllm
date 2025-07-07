@@ -5,23 +5,33 @@ import json
 import fire
 from os import getenv
 from openai import OpenAI
-from metagpt.actions import Action
+from metagpt.actions import Action, UserRequirement
 from metagpt.logs import logger
 from metagpt.roles.role import Role, RoleReactMode
 from metagpt.schema import Message, UserMessage
-from metagpt.actions.add_requirement import UserRequirement
 import logging
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.readers.file import PDFReader
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 try:
     from duckduckgo_search import DDGS
 except ImportError:
     raise ImportError("`duckduckgo-search` not installed. Please install using `pip install duckduckgo-search`")
 
+def get_class_name(cls) -> str:
+    """Return class name"""
+    return f"{cls.__module__}.{cls.__name__}"
+def any_to_str(val: Any) -> str:
+    """Return the class name or the class name of the object, or 'val' if it's a string type."""
+    if isinstance(val, str):
+        return val
+    elif not callable(val):
+        return get_class_name(type(val))
+    else:
+        return get_class_name(val)
 class QdrantRAGAction(Action):
     """
     使用 Qdrant 向量数据库实现检索增强生成（RAG）的 Action
@@ -498,14 +508,14 @@ class TeamLeader(Role):
         super().__init__(**kwargs)
         self.set_actions([TaskAssignment, SummarizeReports])
         # 监听用户查询和专家报告
-        self._watch([UserRequirement, MakeResearch,MakeAnalyst, MakeStratege])
+        self._watch([UserMessage, MakeResearch,MakeAnalyst, MakeStratege])
         self.assigned_tasks = {}
-        self.expected_reports = 0
+        self.expected_reports = 0  # 预期收到的报告数量
         self.received_reports = []
 
     async def _observe(self):
         """观察环境中的消息"""
-        await super()._observe()
+        num :int = await super()._observe()
 
         # 收集专家报告
         for msg in self.rc.memory.get():
@@ -516,6 +526,7 @@ class TeamLeader(Role):
                     "content": msg.content
                 })
                 logger.info(f"📥 收到 {msg.role} 的报告")
+        return num
 
     async def _act(self) -> Message:
         """领导的核心决策逻辑"""
@@ -523,7 +534,7 @@ class TeamLeader(Role):
         latest_msg = self.rc.memory.get()[-1]
 
         # 处理用户查询 - 分配任务
-        if isinstance(latest_msg.cause_by, UserRequirement):
+        if latest_msg.cause_by == any_to_str(UserMessage) or latest_msg.cause_by == any_to_str(UserRequirement):
             return await self._handle_user_query(latest_msg.content)
 
         # 处理专家报告 - 汇总结果

@@ -212,7 +212,7 @@ def main():
 
                             # Legal Agent Team Leader
                             legal_team_leader = TeamLeader(
-                                name="Legal Team Lead",
+                                name="Mike",
                                 profile="Legal team coordinator"
                             )
                             # Legal Agent Team
