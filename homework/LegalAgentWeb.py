@@ -137,6 +137,7 @@ async def chat(team,query:str) -> str:
         raise ValueError("team must be an instance of Team")
 
     response = await team.run(idea=query)
+    response = response.storage[-1]
     return response.content if response.content else "No response from team"
 
 def main():
@@ -335,8 +336,8 @@ def main():
 
                         with tabs[0]:
                             st.markdown("### Detailed Analysis")
-                            if response.content:
-                                st.markdown(response.content)
+                            if response:
+                                st.markdown(response)
                             else:
                                 for message in response.messages:
                                     if message.role == 'assistant' and message.content:
@@ -346,12 +347,12 @@ def main():
                             st.markdown("### Key Points")
                             key_points_response = asyncio.run(chat(st.session_state.legal_team,
                                 f"""Based on this previous analysis:    
-                                {response.content}
+                                {response}
                                 Please summarize the key points in bullet points.
                                 Focus on insights from: {', '.join(analysis_configs[analysis_type]['agents'])}"""
                             ))
-                            if key_points_response.content:
-                                st.markdown(key_points_response.content)
+                            if key_points_response:
+                                st.markdown(key_points_response)
                             else:
                                 for message in key_points_response.messages:
                                     if message.role == 'assistant' and message.content:
@@ -361,13 +362,13 @@ def main():
                             st.markdown("### Recommendations")
                             recommendations_response = asyncio.run(chat(st.session_state.legal_team,
                                 f"""Based on this previous analysis:
-                                {response.content}
+                                {response}
 
                                 What are your key recommendations based on the analysis, the best course of action?
                                 Provide specific recommendations from: {', '.join(analysis_configs[analysis_type]['agents'])}"""
                             ))
-                            if recommendations_response.content:
-                                st.markdown(recommendations_response.content)
+                            if recommendations_response:
+                                st.markdown(recommendations_response)
                             else:
                                 for message in recommendations_response.messages:
                                     if message.role == 'assistant' and message.content:

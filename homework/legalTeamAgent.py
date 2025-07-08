@@ -287,7 +287,7 @@ class LegalResearcher(Role):
 
         # 检查是否是给自己的任务
         if self.name not in task_msg.send_to:
-            return Message(content="非分配任务", role=self.profile)
+            return Message(content="非分配任务", role=self.profile,cause_by="null")
 
         key_categories = [
             "合同标的与范围",
@@ -363,7 +363,7 @@ class ContractAnalyst(Role):
 
         # 检查是否是给自己的任务
         if self.name not in task_msg.send_to:
-            return Message(content="非分配任务", role=self.profile)
+            return Message(content="非分配任务", role=self.profile,cause_by="null")
 
         key_categories = [
             "合同标的与范围",
@@ -387,11 +387,11 @@ class ContractAnalyst(Role):
         contract = "\n".join(f"{k}: {v}" for k, v in results.items())
 
         # 执行法律分析
-        biz_analysis = await self.rc.todo.run(contract=contract,query=task_msg.content)
+        legal_analysis = await self.rc.todo.run(contract=contract,query=task_msg.content)
 
         # 将分析结果发送给领导
         return Message(
-            content=biz_analysis,
+            content=legal_analysis,
             role=self.profile,
             cause_by=MakeAnalyst,
             send_to=task_msg.sent_from  # 发送给领导
@@ -408,15 +408,13 @@ class MakeStratege(Action):
         {query}
 
         ## 你的角色 ##
-        你是风险控制专家，擅长识别和评估各类商业和技术风险。
+        你是法律战略，为用户定制做法，符合法律且有利于用户。
 
         ## 任务 ##
         请从以下角度提供专业分析：
-        1. 技术实施风险
-        2. 市场接受度风险
-        3. 合规与法律风险
-        4. 财务与运营风险
-        5. 风险缓解策略
+        1.Develop comprehensive legal strategies,
+        2.Provide actionable recommendations,
+        3.Consider both risks and opportunities
 
         输出格式：Markdown 风险评估报告
         """
@@ -429,8 +427,9 @@ class LegalStrategist(Role):
                  **kwargs):
         super().__init__(**kwargs)
 
+        self.qdrantAction = QdrantRAGAction(qdrant=qdrant, collection_name=collection_name)
 
-        self.set_actions([QdrantRAGAction(qdrant = qdrant, collection_name=collection_name),MakeStratege])
+        self.set_actions([MakeStratege])
         # 监听用户查询和专家报告
         self._watch([TaskAssignment])
 
@@ -441,14 +440,35 @@ class LegalStrategist(Role):
 
         # 检查是否是给自己的任务
         if self.name not in task_msg.send_to:
-            return Message(content="非分配任务", role=self.profile)
+            return Message(content="非分配任务", role=self.profile,cause_by="null")
+
+        key_categories = [
+            "合同标的与范围",
+            "履行期限与交付",
+            "双方权利义务",
+            "价格与支付条款",
+            "保证与陈述",
+            "违约责任与赔偿",
+            "合同期限与终止条件",
+            "争议解决与管辖",
+            "保密与知识产权",
+            "不可抗力条款"
+        ]
+
+        results = {}
+        for cat in key_categories:
+            # 每次检索时，将分类名称作为 query，让 Agent 去拉相关段落
+            prompt = f"请检索这份合同中与「{cat}」相关的所有条款，并做简要归纳。"
+            results[cat] = await self.qdrantAction.run(prompt)
+
+        contract = "\n".join(f"{k}: {v}" for k, v in results.items())
 
         # 执行法律战略计划
-        biz_analysis = await self.rc.todo.run(task_msg.content)
+        legal_stratege = await self.rc.todo.run(contract=contract,query=task_msg.content)
 
         # 将分析结果发送给领导
         return Message(
-            content=biz_analysis,
+            content=legal_stratege,
             role=self.profile,
             cause_by=MakeStratege,
             send_to=task_msg.sent_from  # 发送给领导
@@ -465,20 +485,21 @@ class TaskAssignment(Action):
         {query}
 
         ## 你的任务 ##
-        1. 分析查询内容，在上面选择专家，确定需要哪些专家参与
+        1. 分析查询内容，选择上面的所述的专家，专家类型要用英文输出，与上述保持一致
         2. 为每位专家分配具体的分析任务
-        3. 说明分配理由
+        3.Always search the knowledge base before delegating tasks
 
         ## 输出格式 ##
+        输出格式为 JSON，类似于以下字段：
         {{
             "分配说明": "简要说明分配理由",
             "分配列表": [
                 {{
-                    "专家类型": "Legal Researcher",
+                    "专家类型": "专家1类型",
                     "任务描述": "具体分析任务描述"
                 }},
                 {{
-                    "专家类型": "Contract Analyst",
+                    "专家类型": "专家2类型",
                     "任务描述": "具体分析任务描述"
                 }}
             ]
@@ -499,34 +520,33 @@ class SummarizeReports(Action):
 
     async def run(self, report_text: str) -> str:
         prompt = f"""
-        ## 分析报告汇总 ##
+
+        You are the Leader of the legal team (“Legal Team Leader Agent”). Your mission is to:
+
+        1. 收集并阅读所有团队成员最新一次的输出结果。
+        2. 按照“要点—细节—风险”三个层次，对各成员的结论和发现进行梳理：  
+           a. 要点：提炼最核心的结论或建议；
+           b. 细节：列出支持结论的关键事实、法规条文、判例或论证逻辑；
+           c. 风险：识别潜在法律风险、冲突或遗漏，并标注优先级。
+        3. 对比各成员之间的观点和数据，若存在不一致或矛盾，标出并提出需要进一步验证或讨论的问题清单。
+        4. 基于上述汇总，生成一份“法律风险评估与下一步行动”建议，包括：  
+           - 主要关注点（Top 3）；
+           - 建议的补充调研方向；
+           - 预计的时间节点和负责人（若团队已有明确分工）。
+        5. 保持语言客观、中立，并注重条理清晰，确保整个团队都能快速阅读、理解并执行。
+        6. 输出格式：
+           - 摘要（不超过 5 行）
+           - 详细汇总（分项列表）
+           - 风险与建议（表格或列点形式）
+        7.Coordinate analysis between team members,
+        8.Provide comprehensive responses,
+        9.Ensure all recommendations are properly sourced,
+        10.Reference specific parts of the uploaded document,
+        
+        Begin: 
+        “以下是法律团队各成员的最新输出摘要，请从中提炼核心要点并完成上述任务：”  
+        然后依次粘入各成员内容，启动自动汇总。
         {report_text}
-
-        ## 你的任务 ##
-        作为团队领导，你需要：
-        1. 综合所有专业角度的分析
-        2. 识别关键共识与分歧点
-        3. 提出综合建议和决策方案
-        4. 制定下一步行动计划
-
-        ## 输出格式 ##
-        # 综合决策报告
-        ## 关键共识
-        - 点1
-        - 点2
-
-        ## 主要分歧
-        - 分歧点1：不同观点分析
-        - 分歧点2：不同观点分析
-
-        ## 综合建议
-        - 建议1（技术+商业+用户体验平衡）
-        - 建议2
-
-        ## 行动计划
-        1. 短期行动（1周内）
-        2. 中期行动（1个月内）
-        3. 长期行动（3个月+）
         """
         return await self._aask(prompt)
 
@@ -535,7 +555,7 @@ class TeamLeader(Role):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.set_actions([TaskAssignment, SummarizeReports])
+        self.set_actions([TaskAssignment])
         # 监听用户查询和专家报告
         self._watch([UserMessage, MakeResearch,MakeAnalyst, MakeStratege])
         self.assigned_tasks = {}
@@ -548,8 +568,8 @@ class TeamLeader(Role):
 
         # 收集专家报告
         for msg in self.rc.memory.get():
-            if msg.cause_by in [MakeResearch, MakeAnalyst,
-                                MakeStratege]:
+            if msg.cause_by in ['legalTeamAgent.MakeResearch', 'legalTeamAgent.MakeAnalyst',
+                                'legalTeamAgent.MakeStratege']:
                 self.received_reports.append({
                     "role": msg.role,
                     "content": msg.content
@@ -635,16 +655,8 @@ class TeamLeader(Role):
         # 汇总报告
         summary = await SummarizeReports().run(report_text)
 
-        # 添加任务分配信息
-        task_msg = self.rc.memory.get_by_action(TaskAssignment)[0]
         full_report = f"""
         # 综合决策报告
-        ## 原始查询
-        {task_msg.original_query}
-
-        ## 任务分配
-        {task_msg.content}
-
         {summary}
         """
 
