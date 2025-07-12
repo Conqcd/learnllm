@@ -1,0 +1,11 @@
+### model
+model_name_or_path: F:\data2\anti_fraud\models\modelscope\hub\Qwen\Qwen2-7B-Instruct
+adapter_name_or_path: F:\learnllm\homework\peft\anti-fraud\Qwen2-7B-Instruct_0711\checkpoint-6600
+template: qwen
+finetuning_type: lora
+
+### export
+export_dir: F:\learnllm\homework\peft\anti-fraud\Qwen2-7B-Instruct_0711\eval
+export_size: 2
+export_device: cuda
+export_legacy_format: false
