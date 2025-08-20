@@ -1,11 +1,11 @@
-import json
 import pandas as pd
 import torch
+import json
 from datasets import Dataset
-from peft import LoraConfig, TaskType, get_peft_model
+from torch.utils.data import DataLoader
+from peft import LoraConfig, TaskType, get_peft_model,PeftModel
 from transformers import AutoModelForCausalLM, TrainingArguments, Trainer, DataCollatorForSeq2Seq,AutoTokenizer,TrainerCallback
 import numpy as np
-import evaluate
 import re
 from collections import defaultdict
 
@@ -84,7 +84,7 @@ def dict_p_r_f1(pred_list: list[str], goal_list: list[str]) -> dict[str, float]:
 
     return {'precision': precision, 'recall': recall, 'f1': f1}
 
-metric = evaluate.load("seqeval")
+# metric = evaluate.load("seqeval")
 
 f1_dict = {'中医治则':[], '中医治疗':[], '中医证候':[], '中医诊断':[], '中药':[], '临床表现':[], '其他治疗':[], '方剂':[], '西医治疗':[], '西医诊断':[]}
 f1_total_dict = {'中医治则':[], '中医治疗':[], '中医证候':[], '中医诊断':[], '中药':[], '临床表现':[], '其他治疗':[], '方剂':[], '西医治疗':[], '西医诊断':[]}
@@ -185,8 +185,76 @@ class F1PrintCallback(TrainerCallback):
                 print("-" * 50)
 
 
+def collate_fn(batch):
+    inputs = []
+    answers = []
+    for b in batch:
+        inputs.append(b["input_ids"])
+        answers.append(b["labels"])
+
+    batch_data = tokenizer(inputs, truncation=True, padding=True, max_length=1280, return_tensors="pt")
+
+    with tokenizer.as_target_tokenizer():
+        answer_token = tokenizer(answers, truncation=True, padding=True, max_length=1280, return_tensors="pt").input_ids
+
+        batch_data['decoder_input_ids'] = model.prepare_decoder_input_ids_from_labels(answer_token)
+        eos_token_id = torch.where(answer_token == tokenizer.eos_token_id)[1]
+        for idx, eos_id in enumerate(eos_token_id):
+            answer_token[idx][eos_id + 1:] = -100  # Mask out the tokens after the EOS token
+        batch_data['labels'] = answer_token
+
+    return batch_data
+
+def test_loop_final(dataloader, tokenizer, model, device, save_path):
+    labels = []
+    predictions = []
+    sources = []
+    model.eval()
+    for batch, data in enumerate(dataloader):
+        data = data.to(device)
+        with torch.no_grad():
+            output = model.generate(data["input_ids"],
+                                    attention_mask=data["attention_mask"],
+                                    max_length=1280,
+                                    num_beams=4,
+                                    no_repeat_ngram_size=2,
+                                    )
+        if isinstance(output, tuple):
+            output = output[0]
+
+        decoded_sources = tokenizer.batch_decode(
+            data["input_ids"].cpu().numpy(),
+            skip_special_tokens=True,
+            use_source_tokenizer=True
+        )
+
+        sources += [source.strip() for source in decoded_sources]
+
+        decoded_preds = tokenizer.batch_decode(output, skip_special_tokens=True)
+        predictions += [' '.join(pred.strip()) for pred in decoded_preds]
+
+        label_token = data["labels"].cpu().numpy()
+        label_token = np.where(label_token == -100, tokenizer.pad_token_id, label_token)
+        decoded_label = tokenizer.batch_decode(label_token, skip_special_tokens=True)
+
+        labels += [' '.join(label.strip()) for label in decoded_label]
+        print(f"batch: {batch}")
+
+    results = []
+    for source, pred, label in zip(sources, predictions, labels):
+        results.append({
+            "context": source,
+            "prediction": pred,
+            "labels": label
+        })
+    with open(save_path, 'w', encoding='utf-8') as f:
+        for result in results:
+            f.write(json.dumps(result, ensure_ascii=False) + '\n')
+
+
 model_id = "qwen/Qwen2.5-7B-Instruct"
 model_dir = "F:\\learnllm\\homework\\peft\\qwen\\Qwen2___5-7B-Instruct"
+trained_model_dir = "F:\\learnllm\\homework\\peft\\output\\Qwen2.5-MedicalNER\\checkpoint-690"
 
 # Transformers加载模型权重
 tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=False, trust_remote_code=True)
@@ -208,6 +276,12 @@ train_df = total_df[int(len(total_df) * 0.1):]
 train_ds = Dataset.from_pandas(train_df)
 eval_dataset = train_ds.map(process_func, remove_columns=train_ds.column_names)
 
+test_jsonl_new_path = "datasets/medical_test.jsonl"
+
+total_df = pd.read_json(test_jsonl_new_path, lines=True)
+train_df = total_df[int(len(total_df) * 0.1):]
+train_ds = Dataset.from_pandas(train_df)
+test_dataset = train_ds.map(process_func, remove_columns=train_ds.column_names)
 
 config = LoraConfig(
     task_type=TaskType.CAUSAL_LM,
@@ -218,7 +292,8 @@ config = LoraConfig(
     lora_dropout=0.1,  # Dropout 比例
 )
 
-model = get_peft_model(model, config)
+model=PeftModel.from_pretrained(model,trained_model_dir)
+# model = get_peft_model(model, config)
 
 args = TrainingArguments(
     output_dir="./output/Qwen2.5-MedicalNER",
@@ -251,5 +326,7 @@ trainer = Trainer(
     data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True),
 )
 
+# test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+results = test_loop_final(test_dataset,tokenizer,model,"cuda","output/Qwen2.5-MedicalNER/test_predictions.json")
 # results = trainer.evaluate()
-trainer.train()
+# trainer.train()
